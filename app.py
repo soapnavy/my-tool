@@ -97,92 +97,40 @@ with tab2:
     
     analyze_btn = st.button("🚀 开始量化分析", type="primary")
     
-        if analyze_btn:
-        with st.spinner("正在拉取数据并执行量化模型..."):
-            if "海外" in data_source:
-                hist, status_msg = get_yfinance_data(stock_code)
-            else:
-                hist, status_msg = get_akshare_data(stock_code)
+    if analyze_btn:
+        with st.spinner("正在拉取数据..."):
+            hist = get_yfinance_data(stock_code) if "海外" in data_source else get_akshare_data(stock_code)
             
-            if hist is not None and len(hist) >= 10:
-                # ==========================================
-                # 1. 核心指标计算 (严格按照你的量化标准)
-                # ==========================================
-                # 计算5日均线
+            if hist is not None and len(hist) >= 5:
                 hist['MA5'] = hist['收盘'].rolling(window=5).mean()
-                # 计算均量 (这里采用5日均量作为基准)
-                hist['均量'] = hist['成交量'].rolling(window=5).mean()
-                # 计算乖离率 (BIAS)
-                hist['BIAS'] = (hist['收盘'] - hist['MA5']) / hist['MA5'] * 100
-                
                 latest = hist.iloc[-1]
-                prev_1 = hist.iloc[-2]
-                prev_2 = hist.iloc[-3]
+                prev = hist.iloc[-2]
                 
-                # ==========================================
-                # 2. 战法条件判定
-                # ==========================================
-                # 条件1：站上5日线
-                is_above_ma5 = latest['收盘'] > latest['MA5']
+                close_price = latest['收盘']
+                ma5_price = latest['MA5']
+                vol_today = latest['成交量']
+                vol_prev = prev['成交量']
+                vol_ratio = vol_today / vol_prev if vol_prev > 0 else 0
                 
-                # 条件2：连续3天放量
-                is_vol_up_3days = (latest['成交量'] > prev_1['成交量']) and (prev_1['成交量'] > prev_2['成交量'])
+                st.divider()
+                c1, c2, c3 = st.columns(3)
+                c1.metric("最新收盘价", f"¥{close_price:.2f}")
+                c2.metric("5日均线", f"¥{ma5_price:.2f}")
+                c3.metric("量能倍数", f"{vol_ratio:.2f} 倍")
                 
-                # 条件3：7天内有1-2天达到均量1.45倍
-                last_7_days = hist.tail(7)
-                is_huge_vol = len(last_7_days[last_7_days['成交量'] >= 1.45 * last_7_days['均量']]) >= 1
+                is_above_ma5 = close_price > ma5_price
+                is_huge_vol = vol_ratio >= 1.45
                 
-                # 乖离率判定
-                bias_val = latest['BIAS']
-                
-                # ==========================================
-                # 3. 完美展现分析结果 (UI界面)
-                # ==========================================
-                st.markdown(f"### 📊 {stock_code} 量化战法分析报告")
-                st.caption(f"最新收盘价: {latest['收盘']:.2f} | 5日均线: {latest['MA5']:.2f}")
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("当前乖离率 (BIAS)", f"{bias_val:.2f}%")
-                col2.metric("今日成交量", f"{latest['成交量']:,.0f}")
-                col3.metric("5日均量", f"{latest['均量']:,.0f}")
-                
-                st.markdown("---")
-                st.markdown("#### 🛡️ 核心技术指标体检")
-                
-                # 1. 均线与趋势
-                if is_above_ma5:
-                    st.success("✅ **均线理论**：股价已站上5日均线，短期多头占优。")
-                else:
-                    st.error("❌ **均线理论**：股价跌破5日均线，短期趋势转弱。")
-                    
-                # 2. 量价关系 (异动量化)
-                if is_vol_up_3days and is_huge_vol:
-                    st.success("✅ **量化突破**：满足连续3天放量，且7天内出现1.45倍巨量！异动明显，主力资金疑似介入。")
+                if is_above_ma5 and is_huge_vol:
+                    st.success("✅ **完美符合！** 站上5日线且放量超1.45倍。")
+                elif is_above_ma5:
+                    st.warning("⚠️ **部分符合。** 站上5日线，但量能不足。")
                 elif is_huge_vol:
-                    st.warning("⚠️ **量化突破**：7天内出现了1.45倍巨量，但未满足连续3天放量。需观察是否为洗盘。")
+                    st.warning("⚠️ **部分符合。** 放巨量，但未站上5日线。")
                 else:
-                    st.info("📉 **量化突破**：近期成交量平淡，未触发1.45倍巨量标准。")
-                    
-                # 3. 乖离率与防守技术
-                st.markdown("#### ⚔️ 交易决策建议 (基于BIAS)")
-                if abs(bias_val) <= 2.5:
-                    st.success("🟢 **健康持仓区**：当前乖离率在 ±2.5% 内，属于健康震荡/洗盘，建议死拿过滤噪音。")
-                elif bias_val <= -7.5:
-                    st.error("🚨 **强制防线触发**：跌破5日均线超过 7.5%！触发第一道防线，建议无条件减仓或离场！")
-                elif 4.0 <= bias_val <= 5.0 and is_huge_vol:
-                    st.success("🔥 **二次入场信号**：反抽放巨量，且偏离度在 4.5% 左右！疑似主力做双底，触发二次上车信号！")
-                elif bias_val > 2.5:
-                    st.warning("⚠️ **偏离过大**：向上乖离率超过 2.5%，短线有回调风险，不建议盲目追高。")
-                else:
-                    st.info("👀 **观望区**：当前指标处于中间地带，严格遵守 -20% 绝对止损底线。")
-                    
-                # 4. 行为金融学提示
-                st.markdown("---")
-                st.markdown("💡 **情绪博弈提示**：请结合基本面新闻。如果该股近期发布了**重大利空**，但今天依然走出了上述的【放量+站稳5日线】形态，说明“弱势见真金”，是极佳的右侧买入点！")
-
+                    st.error("❌ **不符合。** 破位且无量，建议观望。")
             else:
-                st.error(f"❌ 数据获取失败或数据量不足！\n\n**系统底层报错原因**：{status_msg}")
-
+                st.error("❌ 数据获取失败，请检查代码或尝试切换数据引擎。")
 
 # ------------------------------------------
 # 标签页 3：个股 X 光机
