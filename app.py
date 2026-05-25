@@ -45,7 +45,7 @@ def get_akshare_data(symbol):
         return None
 
 # ==========================================
-# 侧边栏：全局设置与导航
+# 侧边栏：全局设置与导航 (只放设置和菜单)
 # ==========================================
 st.sidebar.title("⚙️ 全局设置")
 data_source = st.sidebar.radio(
@@ -61,7 +61,7 @@ menu = st.sidebar.radio(
 )
 
 # ==========================================
-# 功能 1：📈 战法分析器 (双引擎通用)
+# 功能 1：📈 战法分析器 (主界面)
 # ==========================================
 if menu == "📈 战法分析器 (核心)":
     st.title("📈 均线与量能核心战法分析器")
@@ -71,9 +71,17 @@ if menu == "📈 战法分析器 (核心)":
         st.caption("当前状态：🔴 已启用国内全能引擎 (适合电脑端深度分析)")
     st.divider()
     
-    stock_code = st.sidebar.text_input("请输入股票代码 (如: 600519)", value="600519")
-    cost_price = st.sidebar.number_input("您的买入成本价 (选填)", min_value=0.00, value=0.00, step=0.10)
-    analyze_btn = st.sidebar.button("开始量化分析")
+    # 【修复重点】把输入框放在主界面，并排显示更美观
+    col_input1, col_input2 = st.columns(2)
+    with col_input1:
+        stock_code = st.text_input("请输入股票代码 (如: 600519)", value="600519")
+    with col_input2:
+        cost_price = st.number_input("您的买入成本价 (选填)", min_value=0.00, value=0.00, step=0.10)
+    
+    # 按钮也放在主界面，加粗变色
+    analyze_btn = st.button("🚀 开始量化分析", type="primary")
+    
+    st.markdown("---") # 加一条分割线，区分输入区和结果区
     
     if analyze_btn:
         with st.spinner("正在拉取数据..."):
@@ -94,11 +102,13 @@ if menu == "📈 战法分析器 (核心)":
                 vol_prev = prev['成交量']
                 vol_ratio = vol_today / vol_prev if vol_prev > 0 else 0
                 
+                # 展示核心数据
                 col1, col2, col3 = st.columns(3)
                 col1.metric("最新收盘价", f"¥{close_price:.2f}")
                 col2.metric("5日均线", f"¥{ma5_price:.2f}")
                 col3.metric("量能倍数", f"{vol_ratio:.2f} 倍")
                 
+                # 诊断结论
                 st.markdown("### 📊 诊断结论")
                 is_above_ma5 = close_price > ma5_price
                 is_huge_vol = vol_ratio >= 1.45
@@ -115,7 +125,7 @@ if menu == "📈 战法分析器 (核心)":
                 st.error("❌ 数据获取失败，请检查代码或尝试切换数据引擎。")
 
 # ==========================================
-# 功能 2 & 3：大盘与板块 (仅限国内引擎)
+# 功能 2 & 3：大盘与板块 (主界面)
 # ==========================================
 elif menu in ["🌡️ 大盘温度计", "🔄 板块轮动监控"]:
     st.title(menu)
@@ -136,4 +146,4 @@ elif menu in ["🌡️ 大盘温度计", "🔄 板块轮动监控"]:
                     st.dataframe(board_df.head(10))
                     st.success("🎉 成功获取板块数据！(仅展示前10条)")
                 except Exception as e:
-                    st.error("获取失败，可能是云服务器IP被国内拦截。请在本地电脑运行！")
+                    st.error("获取失败，可能是网络问题或接口限制。")
