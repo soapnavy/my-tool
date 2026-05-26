@@ -1,4 +1,5 @@
 # app.py
+# 必要的引用库
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -7,7 +8,7 @@ import akshare as ak
 from datetime import datetime, timedelta
 
 # --- 1. 页面基础设置 (适配移动端) ---
-st.set_page_config(page_title="五日线战法", layout="centered") # 手机端用 centered 更好看
+st.set_page_config(page_title="五日线战法", layout="centered") # 手机端用 centered 留白更自然
 st.title("📈 五日线战法量化分析")
 st.markdown("基于趋势+量能+风控的强势股主升浪交易模型。")
 
@@ -27,6 +28,7 @@ analyze_button = st.button("🚀 执行战法分析", type="primary", use_contai
 # --- 3. 核心功能函数 ---
 
 def format_ticker_yahoo(ticker):
+    """为 Yahoo Finance 自动处理 A 股代码后缀"""
     ticker = ticker.strip().upper()
     if ticker.isdigit() and len(ticker) == 6:
         if ticker.startswith('6'):
@@ -36,6 +38,7 @@ def format_ticker_yahoo(ticker):
     return ticker
 
 def get_akshare_dates(period_str):
+    """为 AkShare 计算起始和结束日期 (YYYYMMDD)"""
     end_date = datetime.now()
     if period_str == "3mo":
         start_date = end_date - timedelta(days=90)
@@ -51,6 +54,7 @@ def get_akshare_dates(period_str):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_stock_data(ticker, period, source):
+    """统一的数据获取路由函数"""
     if "AkShare" in source:
         code = ''.join(filter(str.isdigit, ticker))
         if len(code) != 6:
@@ -79,8 +83,10 @@ def fetch_stock_data(ticker, period, source):
         return stock.history(period=period)
 
 def analyze_strategy(df, buy_price):
+    """战法核心算法：严格对应8条规则"""
     data = df.copy()
     
+    # 核心指标计算
     data['MA5'] = data['Close'].rolling(window=5).mean()
     data['Avg_Vol_5'] = data['Volume'].rolling(window=5).mean().shift(1)
     data['Vol_Ratio'] = data['Volume'] / data['Avg_Vol_5']
@@ -105,26 +111,41 @@ def analyze_strategy(df, buy_price):
     
     report_lines = []
     
+    # 规则 1
     report_lines.append("**1. 入场基础**：价格必须站稳5日均线之上。")
     report_lines.append(f"> 💡 **状态**：{'✅ 达标' if is_above_ma5 else '❌ 未达标'}")
 
+    # 规则 2
     report_lines.append("\n**2. 成交量验证**：连续三日放量，七日内有巨量。")
     vol_status = "✅ 达标" if (max_consecutive >= 3 and 1 <= massive_vol_count <= 2) else "⚠️ 未完全达标"
     report_lines.append(f"> 💡 **状态**：{vol_status} (最大连放: {max_consecutive}天, 巨量: {massive_vol_count}天)")
 
+    # 规则 3 (包含详细数据推导)
     report_lines.append("\n**3. 巨量标准**：当日成交量≥前期均量1.45倍。")
-    report_lines.append(f"> 💡 **状态**：{'✅ 今日巨量' if latest['Is_Massive_Vol'] else 'ℹ️ 今日未达巨量'} (量比 {latest['Vol_Ratio']:.2f})")
+    if latest['Is_Massive_Vol']:
+        report_lines.append(f"> 💡 **状态**：✅ **今日巨量** (量比 {latest['Vol_Ratio']:.2f})")
+    else:
+        report_lines.append(f"> 💡 **状态**：ℹ️ **今日未达巨量** (量比 {latest['Vol_Ratio']:.2f})")
+    
+    vol_today = latest['Volume']
+    vol_avg5 = latest['Avg_Vol_5']
+    report_lines.append(f"> 📊 **数据明细**：今日成交量为 **{vol_today:,.0f}**，前期5日均量为 **{vol_avg5:,.0f}**。")
+    report_lines.append(f"> 🧮 **计算结论**：{vol_today:,.0f} ÷ {vol_avg5:,.0f} = **{latest['Vol_Ratio']:.2f}** 倍。")
 
+    # 规则 4
     report_lines.append("\n**4. 买入时机**：买在分歧严重时。")
     report_lines.append("> 💡 **状态**：ℹ️ *结合消息面主观判断*")
 
+    # 规则 5
     dev_pct = latest['Deviation_MA5'] * 100
     report_lines.append("\n**5. 持有逻辑**：偏离度在±7.5%内视为健康。")
     report_lines.append(f"> 💡 **状态**：{'✅ 趋势健康' if -7.5 <= dev_pct <= 7.5 else '⚠️ 偏离过大'} (偏离度 {dev_pct:.2f}%)")
 
+    # 规则 6
     report_lines.append("\n**6. 第一道防线**：跌破5日线超7.5%减仓/离场。")
     report_lines.append(f"> 💡 **状态**：{'🚨 触发防线！' if dev_pct < -7.5 else '🛡️ 安全'}")
 
+    # 规则 7
     report_lines.append("\n**7. 第二道防线**：亏损达20%无条件止损。")
     if buy_price > 0:
         drawdown = (latest['Close'] - buy_price) / buy_price * 100
@@ -132,9 +153,11 @@ def analyze_strategy(df, buy_price):
     else:
         report_lines.append("> 💡 **状态**：ℹ️ 未设置买入价")
 
+    # 规则 8
     report_lines.append("\n**8. 二次入场**：止损后反抽放巨量，偏离度4.5%左右。")
     report_lines.append(f"> 💡 **状态**：{'🎯 触发二次入场！' if latest['Is_Massive_Vol'] and (4.0 <= dev_pct <= 5.0) else 'ℹ️ 未触发'}")
 
+    # 综合判定
     if dev_pct < -7.5 or (buy_price > 0 and (latest['Close'] - buy_price) / buy_price <= -0.20):
         final_decision = "🔴 **综合建议：已触发风控防线，建议离场！**"
     elif is_above_ma5 and massive_vol_count >= 1:
@@ -176,7 +199,7 @@ if analyze_button:
                         
                     st.divider()
                     
-                    # 详细数据表格 (修复了 NaN 导致 int 转换失败的 Bug)
+                    # 详细数据表格 (已修复 NaN 导致 int 转换失败的 Bug)
                     st.subheader("📊 近期量价明细")
                     display_df = processed_data[['Close', 'Volume', 'MA5', 'Avg_Vol_5', 'Vol_Ratio', 'Deviation_MA5', 'Is_Massive_Vol']].copy()
                     
