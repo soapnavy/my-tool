@@ -22,6 +22,7 @@ with st.sidebar:
 def format_ticker(ticker):
     """自动处理 A 股代码后缀"""
     ticker = ticker.strip().upper()
+    # 如果是纯数字且长度为6，自动判断沪深市
     if ticker.isdigit() and len(ticker) == 6:
         if ticker.startswith('6'):
             return f"{ticker}.SS"  # 沪市
@@ -47,6 +48,8 @@ def fetch_stock_data(ticker, period):
 def analyze_strategy(df, buy_price):
     """战法核心算法"""
     data = df.copy()
+    
+    # 计算核心指标
     data['MA5'] = data['Close'].rolling(window=5).mean()
     data['Avg_Vol_5'] = data['Volume'].rolling(window=5).mean().shift(1)
     data['Vol_Ratio'] = data['Volume'] / data['Avg_Vol_5']
@@ -59,7 +62,7 @@ def analyze_strategy(df, buy_price):
     conclusions = []
     status_color = "🟢" 
     
-    # 规则1: 趋势
+    # 规则1: 趋势 (必须站上5日线)
     is_above_ma5 = latest['Close'] > latest['MA5']
     if is_above_ma5:
         conclusions.append("✅ **趋势达标**：当前股价已站上5日均线。")
@@ -67,21 +70,21 @@ def analyze_strategy(df, buy_price):
         conclusions.append("❌ **趋势未达标**：当前股价在5日均线之下，不符合入场基础。")
         status_color = "🔴"
         
-    # 规则2 & 3: 量能
+    # 规则2 & 3: 量能 (7个交易日内出现1-2次1.45倍巨量)
     massive_vol_count = last_7_days['Is_Massive_Vol'].sum()
     if massive_vol_count >= 1:
         conclusions.append(f"✅ **量能达标**：近7个交易日内出现了 {massive_vol_count} 次巨量(≥1.45倍)，资金交投活跃。")
     else:
         conclusions.append("⚠️ **量能欠缺**：近7个交易日内未出现明显巨量，需警惕动能不足。")
         
-    # 规则5: 偏离度防线
+    # 规则5: 偏离度防线 (跌破5日线超7.5%离场)
     if latest['Deviation_MA5'] < -0.075:
         conclusions.append("🚨 **触发第一道防线**：收盘价跌破5日均线超过7.5%，**建议强制减仓或离场！**")
         status_color = "🔴"
     elif is_above_ma5:
         conclusions.append(f"🛡️ **持仓安全**：当前偏离度为 {latest['Deviation_MA5']*100:.2f}%，在安全范围内。")
 
-    # 规则6: 绝对止损
+    # 规则6: 绝对止损 (跌破买入价20%无条件止损)
     if buy_price > 0:
         drawdown = (latest['Close'] - buy_price) / buy_price
         if drawdown <= -0.20:
@@ -90,6 +93,7 @@ def analyze_strategy(df, buy_price):
         else:
             conclusions.append(f"📊 **盈亏状态**：当前较买入价盈亏比例为 {drawdown*100:.2f}%。")
             
+    # 综合判定
     if status_color == "🔴":
         final_decision = "🔴 **综合建议：风险较高，建议观望或严格执行止损纪律。**"
     elif is_above_ma5 and massive_vol_count >= 1:
@@ -103,14 +107,49 @@ def analyze_strategy(df, buy_price):
 if analyze_button:
     if ticker_input:
         real_ticker = format_ticker(ticker_input)
-                    # --- 替换这部分代码 ---
+        
+        with st.spinner(f'正在获取 {real_ticker} 的数据并执行分析 (已启用防封禁机制)...'):
+            try:
+                hist_data = fetch_stock_data(real_ticker, period_input)
+                
+                if not hist_data.empty:
+                    st.success(f"成功获取 {real_ticker} 数据！")
+                    
+                    # 调用核心算法
+                    processed_data, rules_feedback, final_decision = analyze_strategy(hist_data, buy_price_input)
+                    
+                    # 顶层指标卡片展示最新数据
+                    latest_data = processed_data.iloc[-1]
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("最新收盘价", f"{latest_data['Close']:.2f}")
+                    col2.metric("5日均线 (MA5)", f"{latest_data['MA5']:.2f}")
+                    col3.metric("MA5 偏离度", f"{latest_data['Deviation_MA5']*100:.2f}%")
+                    col4.metric("最新量比", f"{latest_data['Vol_Ratio']:.2f}")
+                    
+                    st.divider()
+                    
+                    # 战法结论输出
+                    st.subheader("🎯 战法诊断报告")
+                    st.info(final_decision)
+                    for feedback in rules_feedback:
+                        st.markdown(feedback)
+                        
+                    st.divider()
+                    
+                    # 详细数据表格 (全中文显示)
                     st.subheader("📊 近期量价数据明细 (最近15个交易日)")
                     display_df = processed_data[['Close', 'Volume', 'MA5', 'Avg_Vol_5', 'Vol_Ratio', 'Deviation_MA5', 'Is_Massive_Vol']].copy()
+                    
+                    # 格式化百分比和保留两位小数
                     display_df['Deviation_MA5'] = (display_df['Deviation_MA5'] * 100).round(2).astype(str) + '%'
                     display_df['Vol_Ratio'] = display_df['Vol_Ratio'].round(2)
+                    display_df['MA5'] = display_df['MA5'].round(2)
+                    display_df['Avg_Vol_5'] = display_df['Avg_Vol_5'].round(0).astype(int) # 成交量取整
+                    
+                    # 重置索引并按时间倒序
                     display_df = display_df.reset_index().sort_values(by='Date', ascending=False)
                     
-                    # 新增：将英文列名重命名为中文
+                    # 将列名重命名为中文
                     display_df = display_df.rename(columns={
                         'Date': '交易日期',
                         'Close': '收盘价',
@@ -121,33 +160,6 @@ if analyze_button:
                         'Deviation_MA5': '5日线偏离度',
                         'Is_Massive_Vol': '是否达标巨量'
                     })
-                    
-                    st.dataframe(display_df.head(15), use_container_width=True)
-
-                    
-                    processed_data, rules_feedback, final_decision = analyze_strategy(hist_data, buy_price_input)
-                    
-                    latest_data = processed_data.iloc[-1]
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("最新收盘价", f"{latest_data['Close']:.2f}")
-                    col2.metric("5日均线 (MA5)", f"{latest_data['MA5']:.2f}")
-                    col3.metric("MA5 偏离度", f"{latest_data['Deviation_MA5']*100:.2f}%")
-                    col4.metric("最新量比", f"{latest_data['Vol_Ratio']:.2f}")
-                    
-                    st.divider()
-                    
-                    st.subheader("🎯 战法诊断报告")
-                    st.info(final_decision)
-                    for feedback in rules_feedback:
-                        st.markdown(feedback)
-                        
-                    st.divider()
-                    
-                    st.subheader("📊 近期量价数据明细 (最近15个交易日)")
-                    display_df = processed_data[['Close', 'Volume', 'MA5', 'Avg_Vol_5', 'Vol_Ratio', 'Deviation_MA5', 'Is_Massive_Vol']].copy()
-                    display_df['Deviation_MA5'] = (display_df['Deviation_MA5'] * 100).round(2).astype(str) + '%'
-                    display_df['Vol_Ratio'] = display_df['Vol_Ratio'].round(2)
-                    display_df = display_df.reset_index().sort_values(by='Date', ascending=False)
                     
                     st.dataframe(display_df.head(15), use_container_width=True)
                     
