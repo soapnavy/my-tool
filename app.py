@@ -103,13 +103,27 @@ def analyze_strategy(df, buy_price):
 if analyze_button:
     if ticker_input:
         real_ticker = format_ticker(ticker_input)
-        
-        with st.spinner(f'正在获取 {real_ticker} 的数据并执行分析 (已启用防封禁机制)...'):
-            try:
-                hist_data = fetch_stock_data(real_ticker, period_input)
-                
-                if not hist_data.empty:
-                    st.success(f"成功获取 {real_ticker} 数据！")
+                    # --- 替换这部分代码 ---
+                    st.subheader("📊 近期量价数据明细 (最近15个交易日)")
+                    display_df = processed_data[['Close', 'Volume', 'MA5', 'Avg_Vol_5', 'Vol_Ratio', 'Deviation_MA5', 'Is_Massive_Vol']].copy()
+                    display_df['Deviation_MA5'] = (display_df['Deviation_MA5'] * 100).round(2).astype(str) + '%'
+                    display_df['Vol_Ratio'] = display_df['Vol_Ratio'].round(2)
+                    display_df = display_df.reset_index().sort_values(by='Date', ascending=False)
+                    
+                    # 新增：将英文列名重命名为中文
+                    display_df = display_df.rename(columns={
+                        'Date': '交易日期',
+                        'Close': '收盘价',
+                        'Volume': '当日成交量',
+                        'MA5': '5日均线',
+                        'Avg_Vol_5': '前期5日均量',
+                        'Vol_Ratio': '量比 (巨量标准≥1.45)',
+                        'Deviation_MA5': '5日线偏离度',
+                        'Is_Massive_Vol': '是否达标巨量'
+                    })
+                    
+                    st.dataframe(display_df.head(15), use_container_width=True)
+
                     
                     processed_data, rules_feedback, final_decision = analyze_strategy(hist_data, buy_price_input)
                     
