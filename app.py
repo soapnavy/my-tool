@@ -1,11 +1,15 @@
-// 文件名: app.py
-// 作用: Streamlit 网页交互界面的主程序
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
+# 文件名: app.py
+# 必要的引用库 (注意这里用的是井号 #)
 
-# 页面配置
+import akshare as ak
+import pandas as pd
+import datetime
+import plotly.graph_objects as go
+
+# ==========================================
+# 页面基础设置 (适合手机与PC)
+# 下面继续写你的原有代码...
+
 st.set_page_config(page_title="五日线战法量化工具", layout="centered")
 
 st.title("📈 五日线战法量化分析工具")
