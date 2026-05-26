@@ -1,4 +1,3 @@
-// app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -6,7 +5,7 @@ import pandas as pd
 # --- 1. 页面基础设置 ---
 st.set_page_config(page_title="量化工具测试", layout="wide")
 
-# --- 2. 核心界面输出（必须有这些，网页才不会空白） ---
+# --- 2. 核心界面输出 ---
 st.title("📈 我的量化分析工具")
 st.write("恭喜！环境配置成功，网页可以正常显示了。")
 
@@ -31,7 +30,3 @@ try:
 except Exception as e:
     # 捕获并显示具体的错误信息，方便排查
     st.error(f"数据获取失败，错误信息: {e}")
-
-// --- 测试入口 ---
-// 将此代码覆盖到你的 app.py，提交到 GitHub。
-// 回到你的 Streamlit 网页，刷新页面（或等待自动刷新），即可看到带表格的界面。
